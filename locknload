@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+
+# Copyright (C) 2012 Rogério Carvalho Schneider <stockrt@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+# locknload
+#
+# Created:  Jan 21, 2012
+# Author:   Rogério Carvalho Schneider <stockrt@gmail.com>
+
+
+#############
+## CONFIGS ##
+#############
+
+# Exit on command errors
+#set -e
+# Exit on variable expansion errors
+set -u
+
+
+#############
+## DEFINES ##
+#############
+
+program="$(basename "$0")"
+verbosity=0
+logfile="None"
+lockdir="None"
+command="None"
+
+
+###############
+## FUNCTIONS ##
+###############
+
+usage () {
+    echo "
+Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
+
+    -v
+        Verbosity level. Can be used more than once to increase verbosity.
+        Default: $verbosity
+    -o logfile
+        If defined all the execution output will be redirected to the logfile.
+        Default: $logfile
+    -d lockdir
+        Directory holding the locks. Should be an NFS directory shared among
+        the servers running concurrent commands.
+        Lockfiles found inside the lockdir are defined using some kind of
+        textual hash derived from the original command. Inside the lockfile
+        you will find the original command, the host which got the lock and
+        the start/finish/fail execution time.
+        Default: $lockdir
+    -c command
+        The command to be run itself. If you are trying to run something more
+        complex, perhaps multiple commands with \"&&\" or \";\" or commands
+        with parameters, you should use quoting to encapsulate the command.
+        Default: $command
+"
+}
+
+log () {
+    verbositylevel=$1
+    shift
+    logmessage="$@"
+
+    if [[ $verbosity -ge $verbositylevel ]]
+    then
+        if [[ "$logfile" == "None" ]]
+        then
+            echo "$logmessage"
+        else
+            # Syslog format
+            #echo "$(date +"%b %d %H:%M:%S") $HOSTNAME $program[$$]: ($command): $logmessage"
+            # Slack and yet more useful format
+            echo "$(date) $HOSTNAME $program[$$]: ($command): $logmessage"
+        fi
+    fi
+}
+
+splash () {
+    if [[ "$logfile" == "None" && $verbosity -ge 2 ]]
+    then
+        echo
+    fi
+    log 2 "Program:     $program"
+    log 2 "Command:     $command"
+    log 2 "Verbosity:   $verbosity"
+    log 2 "Logfile:     $logfile"
+    log 2 "Lockdir:     $lockdir"
+    log 2 "Lockfile:    $lockfile"
+    log 2 "Tempfile:    $tempfile"
+    if [[ "$logfile" == "None" && $verbosity -ge 2 ]]
+    then
+        echo
+    fi
+}
+
+
+##########
+## ARGS ##
+##########
+
+while getopts vo:d:c:h arg
+do
+    case $arg in
+        v)
+            let "verbosity+=1"
+            ;;
+        o)
+            logfile="$OPTARG"
+            ;;
+        d)
+            lockdir="$OPTARG"
+            ;;
+        c)
+            command="$OPTARG"
+            ;;
+        h)
+            usage
+            exit 0
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+done
+shift $(($OPTIND - 1))
+
+if [[ "$lockdir" == "None" || "$command" == "None" ]]
+then
+    usage
+    exit 1
+fi
+
+
+##########
+## MAIN ##
+##########
+
+# Logfile
+if [[ "$logfile" != "None" ]]
+then
+    curdir="$PWD"
+    cd "$(dirname "$logfile")"
+    logfile="$PWD/$(basename "$logfile")"
+    cd "$curdir"
+    exec >> "$logfile" 2>&1
+fi
+
+if [[ "$logfile" != "None" ]]
+then
+    log 0 "########################################"
+    log 0 "Started execution"
+else
+    log 1 "Started execution"
+fi
+
+# Lockdir
+log 1 "Creating lockdir: $lockdir"
+if [[ ! -d "$lockdir" ]]
+then
+    mkdir -p "$lockdir"
+    log 3 "Created lockdir: $lockdir"
+else
+    log 3 "Lockdir already exists: $lockdir"
+fi
+
+# Tempfile creation
+log 1 "Creating tempfile"
+tempfile="$(mktemp /tmp/tmp.XXXXXXXXXXXXXXXX)"
+log 3 "Created tempfile: $tempfile"
+
+# Tempfile permissions
+log 1 "Changing permissions of tempfile: $tempfile"
+chmod 755 "$tempfile"
+log 3 "Changed permissions of tempfile: $tempfile"
+
+# Lock
+lockname="$(sed 's/[^[:alnum:]]/_/g' <<< "$command" | tr -s _)"
+lockname="${lockname#_}"
+lockname="${lockname%_}"
+lockfile="$lockdir/$lockname.lock"
+
+# Lock data
+lockdata="$command
+\$HOSTNAME
+start:  \$(date)"
+
+######################
+## Temporary script ##
+######################
+log 1 "Creating command script using tempfile: $tempfile"
+echo "#!/usr/bin/env bash
+
+# Exit on command errors
+#set -e
+# Exit on variable expansion errors
+set -u
+
+echo \"$lockdata\" > \"$lockfile\"
+$command
+ret=\$?
+
+if [[ \$ret -eq 0 ]]
+then
+    echo \"finish: \$(date)\" >> \"$lockfile\"
+else
+    echo \"fail:   \$(date)\" >> \"$lockfile\"
+fi
+
+echo \"return code: \$ret\" >> \"$lockfile\"
+
+exit \$ret" > "$tempfile"
+log 3 "Created command script using tempfile: $tempfile"
+######################
+## Temporary script ##
+######################
+
+# Splash screen
+splash
+
+# Lock and Load
+log 1 "Starting execution of locked command"
+flock -n "$lockfile" "$tempfile"
+ret=$?
+log 3 "Finished execution of locked command"
+
+# Tempfile cleanup
+log 1 "Cleaning tempfile: $tempfile"
+rm -f "$tempfile"
+log 3 "Cleaned tempfile: $tempfile"
+
+if [[ "$logfile" != "None" ]]
+then
+    log 0 "Finished execution. Return code: $ret"
+    log 0 "########################################"
+else
+    log 1 "Finished execution. Return code: $ret"
+fi
+
+# Return code from command
+exit $ret
