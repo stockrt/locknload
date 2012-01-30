@@ -21,6 +21,11 @@
 # Created:  Jan 21, 2012
 # Author:   Rogério Carvalho Schneider <stockrt@gmail.com>
 
+# Requires:
+#   - nfslock / lockd (nfs-utils)
+#   - flock (util-linux)
+#   - lockfile (procmail)
+#   - rw access to the lockdir
 
 #############
 ## CONFIGS ##
