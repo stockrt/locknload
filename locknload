@@ -41,7 +41,11 @@ set -u
 ## DEFINES ##
 #############
 
+# Version number
+version="0.0.1"
+# Program name
 program="$(basename "$0")"
+
 verbosity=0
 logfile="None"
 lockdir="None"
@@ -57,11 +61,13 @@ tempdir="${TMP:-/tmp}"
 usage () {
     echo "
 Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
+    -h
+        Display this help text and exit.
+    -V
+        Display version number and exit.
     -v
         Verbosity level. Can be used more than once to increase verbosity.
         Default: $verbosity
-    -h
-        This help text.
     -o logfile
         If defined all the execution output will be redirected to the logfile.
         Default: $logfile
@@ -132,15 +138,19 @@ splash () {
 ## ARGS ##
 ##########
 
-while getopts vho:d:m:c: arg
+while getopts hVvo:d:m:c: arg
 do
     case $arg in
-        v)
-            let "verbosity+=1"
-            ;;
         h)
             usage
             exit 0
+            ;;
+        V)
+            echo "$program version: $version"
+            exit 0
+            ;;
+        v)
+            let "verbosity+=1"
             ;;
         o)
             logfile="$OPTARG"
