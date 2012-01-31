@@ -75,11 +75,11 @@ Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
         Default: $lockdir
     -m mode
         Lock acquisition mode. Available modes are:
-            flock:      Uses flock command from util-linux package.
+            flock       : Uses flock command from util-linux package.
         Modes not yet implemented:
-            lockfile:   Uses lockfile command from procmail package.
-            hardlink:   Uses the technique described on open(2).
-            mkdir:      Uses a directory as a lock.
+            lockfile    : Uses lockfile command from procmail package.
+            hardlink    : Uses the technique described on open(2).
+            mkdir       : Uses a directory as a lock.
         Default: $lockmode
     -c command
         The command to be run itself. If you are trying to run something more
@@ -112,15 +112,15 @@ splash () {
     then
         echo
     fi
-    log 2 "Program:     $program"
-    log 2 "Command:     $command"
-    log 2 "Verbosity:   $verbosity"
-    log 2 "Logfile:     $logfile"
-    log 2 "Lockdir:     $lockdir"
-    log 2 "Lockfile:    $lockfile"
-    log 2 "Lockmode:    $lockmode"
-    log 2 "Tempdir:     $tempdir"
-    log 2 "Tempfile:    $tempfile"
+    log 2 "Program      : $program"
+    log 2 "Command      : $command"
+    log 2 "Verbosity    : $verbosity"
+    log 2 "Logfile      : $logfile"
+    log 2 "Lockdir      : $lockdir"
+    log 2 "Lockfile     : $lockfile"
+    log 2 "Lockmode     : $lockmode"
+    log 2 "Tempdir      : $tempdir"
+    log 2 "Tempfile     : $tempfile"
     if [[ "$logfile" == "None" && $verbosity -ge 2 ]]
     then
         echo
