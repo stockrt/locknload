@@ -57,7 +57,6 @@ tempdir="${TMP:-/tmp}"
 usage () {
     echo "
 Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
-
     -v
         Verbosity level. Can be used more than once to increase verbosity.
         Default: $verbosity
@@ -84,8 +83,7 @@ Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
         The command to be run itself. If you are trying to run something more
         complex, perhaps multiple commands with \"&&\" or \";\" or commands
         with parameters, you should use quoting to encapsulate the command.
-        Default: $command
-"
+        Default: $command"
 }
 
 log () {
