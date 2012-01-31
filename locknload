@@ -265,6 +265,9 @@ fi
 # And yet more information into lockfile
 echo \"return code: \$ret\" >> \"$lockfile\"
 
+# Signaling that we succeded acquiring the lock
+> \${0}.ok
+
 # Propagating the return code from the command
 exit \$ret" > "$tempfile"
 log 3 "Created command script using tempfile: $tempfile"
@@ -275,15 +278,47 @@ log 3 "Created command script using tempfile: $tempfile"
 # Splash screen
 splash
 
-# Lock and Load
-log 2 "Starting execution of locked command"
+###################
+## Lock and Load ##
+###################
+if [[ "$logfile" != "None" ]]
+then
+    log 2 "Starting execution of locked command"
+    log 2 "Acquiring lock on lockfile: $lockfile"
+else
+    log 2 "Starting execution of locked command: $command"
+    log 2 "Acquiring lock on lockfile: $lockfile"
+fi
+
+# Lock
 flock -n "$lockfile" "$tempfile"
 ret=$?
-log 3 "Finished execution of locked command"
+
+if [[ -f "${tempfile}.ok" ]]
+then
+    if [[ "$logfile" != "None" ]]
+    then
+        log 0 "Acquired lock on lockfile: $lockfile"
+    else
+        log 1 "Acquired lock on lockfile: $lockfile"
+    fi
+else
+    if [[ "$logfile" != "None" ]]
+    then
+        log 0 "Could not acquire lock on lockfile: $lockfile"
+        log 3 "Finished execution of locked command"
+    else
+        log 1 "Could not acquire lock on lockfile: $lockfile"
+        log 3 "Finished execution of locked command: $command"
+    fi
+fi
+###################
+## Lock and Load ##
+###################
 
 # Tempfile cleanup
 log 2 "Cleaning tempfile: $tempfile"
-rm -f "$tempfile"
+rm -f "$tempfile" "${tempfile}.ok"
 log 3 "Cleaned tempfile: $tempfile"
 
 if [[ "$logfile" != "None" ]]
