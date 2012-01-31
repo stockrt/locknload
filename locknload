@@ -45,6 +45,7 @@ program="$(basename "$0")"
 verbosity=0
 logfile="None"
 lockdir="None"
+lockmode="flock"
 command="None"
 tempdir="${TMP:-/tmp}"
 
@@ -71,6 +72,14 @@ Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
         you will find the original command, the host which got the lock and
         the start/finish/fail execution time.
         Default: $lockdir
+    -m mode
+        Lock acquisition mode. Available modes are:
+            flock:      Uses flock command from util-linux package.
+        Modes not yet implemented:
+            lockfile:   Uses lockfile command from procmail package.
+            hardlink:   Uses the technique described on open(2).
+            mkdir:      Uses a directory as a lock.
+        Default: $lockmode
     -c command
         The command to be run itself. If you are trying to run something more
         complex, perhaps multiple commands with \"&&\" or \";\" or commands
@@ -109,6 +118,7 @@ splash () {
     log 2 "Logfile:     $logfile"
     log 2 "Lockdir:     $lockdir"
     log 2 "Lockfile:    $lockfile"
+    log 2 "Lockmode:    $lockmode"
     log 2 "Tempdir:     $tempdir"
     log 2 "Tempfile:    $tempfile"
     if [[ "$logfile" == "None" && $verbosity -ge 2 ]]
@@ -122,7 +132,7 @@ splash () {
 ## ARGS ##
 ##########
 
-while getopts vo:d:c:h arg
+while getopts vo:d:m:c:h arg
 do
     case $arg in
         v)
@@ -133,6 +143,9 @@ do
             ;;
         d)
             lockdir="$OPTARG"
+            ;;
+        m)
+            lockmode="$OPTARG"
             ;;
         c)
             command="$OPTARG"
@@ -149,8 +162,18 @@ do
 done
 shift $(($OPTIND - 1))
 
+# Obrigatory arguments check
 if [[ "$lockdir" == "None" || "$command" == "None" ]]
 then
+    echo "Arguments lockdir and command must be specified."
+    usage
+    exit 1
+fi
+
+# Invalid options check
+if [[ "$lockmode" != "flock" ]]
+then
+    echo "Invalid lockmode: $lockmode"
     usage
     exit 1
 fi
