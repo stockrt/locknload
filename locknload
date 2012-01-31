@@ -60,6 +60,8 @@ Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
     -v
         Verbosity level. Can be used more than once to increase verbosity.
         Default: $verbosity
+    -h
+        This help text.
     -o logfile
         If defined all the execution output will be redirected to the logfile.
         Default: $logfile
@@ -130,11 +132,15 @@ splash () {
 ## ARGS ##
 ##########
 
-while getopts vo:d:m:c:h arg
+while getopts vho:d:m:c: arg
 do
     case $arg in
         v)
             let "verbosity+=1"
+            ;;
+        h)
+            usage
+            exit 0
             ;;
         o)
             logfile="$OPTARG"
@@ -147,10 +153,6 @@ do
             ;;
         c)
             command="$OPTARG"
-            ;;
-        h)
-            usage
-            exit 0
             ;;
         *)
             usage
@@ -184,23 +186,27 @@ fi
 # Logfile
 if [[ "$logfile" != "None" ]]
 then
+    log 4 "Calculating logdir for logfile: $logfile"
     curdir="$PWD"
     cd "$(dirname "$logfile")"
     logfile="$PWD/$(basename "$logfile")"
+    log 4 "Calculated logdir for logfile: $logfile"
     cd "$curdir"
+    log 4 "Redirecting output (stdout and stderr) to logfile: $logfile"
     exec >> "$logfile" 2>&1
 fi
 
 if [[ "$logfile" != "None" ]]
 then
-    log 0 "########################################"
+    log 0 "############################################################"
     log 0 "Started execution"
 else
+    log 1 "############################################################"
     log 1 "Started execution"
 fi
 
 # Lockdir
-log 1 "Creating lockdir: $lockdir"
+log 2 "Creating lockdir: $lockdir"
 if [[ ! -d "$lockdir" ]]
 then
     mkdir -p "$lockdir"
@@ -210,12 +216,12 @@ else
 fi
 
 # Tempfile creation
-log 1 "Creating tempfile"
+log 2 "Creating tempfile"
 tempfile="$(mktemp $tempdir/tmp.XXXXXXXXXXXXXXXXXXXX)"
 log 3 "Created tempfile: $tempfile"
 
 # Tempfile permissions
-log 1 "Changing permissions of tempfile: $tempfile"
+log 2 "Changing permissions of tempfile: $tempfile"
 chmod 755 "$tempfile"
 log 3 "Changed permissions of tempfile: $tempfile"
 
@@ -233,7 +239,7 @@ start:  \$(date)"
 ######################
 ## Temporary script ##
 ######################
-log 1 "Creating command script using tempfile: $tempfile"
+log 2 "Creating command script using tempfile: $tempfile"
 echo "#!/usr/bin/env bash
 
 # Exit on command errors
@@ -241,10 +247,14 @@ echo "#!/usr/bin/env bash
 # Exit on variable expansion errors
 set -u
 
+# Information into lockfile
 echo \"$lockdata\" > \"$lockfile\"
+
+# Running the command itself
 $command
 ret=\$?
 
+# More information into lockfile
 if [[ \$ret -eq 0 ]]
 then
     echo \"finish: \$(date)\" >> \"$lockfile\"
@@ -252,8 +262,10 @@ else
     echo \"fail:   \$(date)\" >> \"$lockfile\"
 fi
 
+# And yet more information into lockfile
 echo \"return code: \$ret\" >> \"$lockfile\"
 
+# Propagating the return code from the command
 exit \$ret" > "$tempfile"
 log 3 "Created command script using tempfile: $tempfile"
 ######################
@@ -264,22 +276,23 @@ log 3 "Created command script using tempfile: $tempfile"
 splash
 
 # Lock and Load
-log 1 "Starting execution of locked command"
+log 2 "Starting execution of locked command"
 flock -n "$lockfile" "$tempfile"
 ret=$?
 log 3 "Finished execution of locked command"
 
 # Tempfile cleanup
-log 1 "Cleaning tempfile: $tempfile"
+log 2 "Cleaning tempfile: $tempfile"
 rm -f "$tempfile"
 log 3 "Cleaned tempfile: $tempfile"
 
 if [[ "$logfile" != "None" ]]
 then
     log 0 "Finished execution. Return code: $ret"
-    log 0 "########################################"
+    log 0 "############################################################"
 else
     log 1 "Finished execution. Return code: $ret"
+    log 1 "############################################################"
 fi
 
 # Return code from command
