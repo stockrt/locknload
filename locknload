@@ -43,15 +43,18 @@ set -u
 
 # Version number
 version="0.0.1"
+
 # Program name
 program="$(basename "$0")"
 
+# Tempdir
+tempdir="${TMP:-/tmp}"
+
 verbosity=0
 logfile="None"
-lockdir="None"
 lockmode="flock"
+lockdir="$tempdir/locks"
 command="None"
-tempdir="${TMP:-/tmp}"
 
 
 ###############
@@ -60,7 +63,7 @@ tempdir="${TMP:-/tmp}"
 
 usage () {
     echo "
-Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
+Usage: locknload [-v] [-o logfile] [-m lockmode] [-d lockdir] -c \"command\"
     -h
         Display this help text and exit.
     -V
@@ -69,8 +72,17 @@ Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
         Verbosity level. Can be used more than once to increase verbosity.
         Default: $verbosity
     -o logfile
-        If defined all the execution output will be redirected to the logfile.
+        If defined all the execution output will be redirected to the logfile,
+        otherwise normal stdout and stderr will be used.
         Default: $logfile
+    -m lockmode
+        Lock acquisition mode. Available lockmodes are:
+            flock       : Uses flock command from util-linux package.
+        Lockmodes not yet implemented:
+            lockfile    : Uses lockfile command from procmail package.
+            hardlink    : Uses the technique described on open(2).
+            mkdir       : Uses a directory as a lock.
+        Default: $lockmode
     -d lockdir
         Directory holding the locks. Should be an NFS directory shared among
         the servers running concurrent commands.
@@ -79,14 +91,6 @@ Usage: locknload [-v] [-o logfile] -d lockdir -c \"command\"
         you will find the original command, the host which got the lock and
         the start/finish/fail execution time.
         Default: $lockdir
-    -m mode
-        Lock acquisition mode. Available modes are:
-            flock       : Uses flock command from util-linux package.
-        Modes not yet implemented:
-            lockfile    : Uses lockfile command from procmail package.
-            hardlink    : Uses the technique described on open(2).
-            mkdir       : Uses a directory as a lock.
-        Default: $lockmode
     -c command
         The command to be run itself. If you are trying to run something more
         complex, perhaps multiple commands with \"&&\" or \";\" or commands
@@ -122,9 +126,9 @@ splash () {
     log 2 "Command      : $command"
     log 2 "Verbosity    : $verbosity"
     log 2 "Logfile      : $logfile"
+    log 2 "Lockmode     : $lockmode"
     log 2 "Lockdir      : $lockdir"
     log 2 "Lockfile     : $lockfile"
-    log 2 "Lockmode     : $lockmode"
     log 2 "Tempdir      : $tempdir"
     log 2 "Tempfile     : $tempfile"
     if [[ "$logfile" == "None" && $verbosity -ge 2 ]]
@@ -138,7 +142,7 @@ splash () {
 ## ARGS ##
 ##########
 
-while getopts hVvo:d:m:c: arg
+while getopts hVvo:m:d:c: arg
 do
     case $arg in
         h)
@@ -155,11 +159,11 @@ do
         o)
             logfile="$OPTARG"
             ;;
-        d)
-            lockdir="$OPTARG"
-            ;;
         m)
             lockmode="$OPTARG"
+            ;;
+        d)
+            lockdir="$OPTARG"
             ;;
         c)
             command="$OPTARG"
@@ -172,10 +176,10 @@ do
 done
 shift $(($OPTIND - 1))
 
-# Obrigatory arguments check
-if [[ "$lockdir" == "None" || "$command" == "None" ]]
+# Obrigatory argument check
+if [[ "$command" == "None" ]]
 then
-    echo "Arguments lockdir and command must be specified."
+    echo "Command must be specified with -c \"command\"."
     usage
     exit 1
 fi
