@@ -42,7 +42,7 @@ set -u
 #############
 
 # Version number
-version="0.0.1"
+version="0.1.0"
 
 # Program name
 program="$(basename "$0")"
