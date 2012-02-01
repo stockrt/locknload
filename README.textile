@@ -63,17 +63,17 @@ Usage: locknload [-v] [-o logfile] [-m lockmode] [-d lockdir] -c "command"
             mkdir       : Uses a directory as a lock.
         Default: flock
     -d lockdir
-        Directory holding the locks. Should be an NFS directory shared among
-        the servers running concurrent commands.
+        Directory holding the locks. Should be an NFS directory shared among the
+        servers running concurrent commands.
         Lockfiles found inside the lockdir are defined using some kind of
-        textual hash derived from the original command. Inside the lockfile
-        you will find the original command, the host which got the lock and
-        the start/finish/fail execution time.
+        textual hash derived from the original command. Inside the lockfile you
+        will find the original command, the host which got the lock and the
+        start/finish/fail execution time.
         Default: /tmp/locks
     -c command
         The command to be run itself. If you are trying to run something more
-        complex, perhaps multiple commands with "&&" or ";" or commands
-        with parameters, you should use quoting to encapsulate the command.
+        complex, perhaps multiple commands with "&&" or ";" or commands with
+        parameters, you should use quoting to encapsulate the command.
         Default: None
 </code>
 </pre>
