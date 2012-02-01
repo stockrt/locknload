@@ -1,0 +1,103 @@
+h2. Locknload
+
+Locknload helps you to wrap your commands around a lockfile to avoid process
+pile up or concurrent execution over many machines. This is mostly used on cron
+jobs.
+
+Concurrency control is made by using a dinamically defined lockfile per command.
+This lockfile can be hosted on a local or remote/shared (NFS) lockdir. When
+using NFS you can not only control if the command should or not run on the local
+machine, but you can coordinate execution of that particular command beetwen a
+set of machines.
+
+Yes, locknload does manage to use lockfiles over NFS and that works just fine
+over NFSv3. All you must to have is an NFS server that supports locking and
+lockd running in your client. Sure you have a few different modes to choose, and
+some of them does not even need the lockd or NFS server locking support to work.
+
+To take advantage of lock control you need only to wrap your command around the
+locknload:
+
+<pre>
+<code>
+    locknload -d /nfs/locks -c "command"
+</code>
+</pre>
+
+h2. Usage
+
+Clone:
+
+<pre>
+<code>
+    git clone https://github.com/stockrt/locknload.git
+    cd locknload
+</code>
+</pre>
+
+Using:
+
+<pre>
+<code>
+    ./locknload -h
+
+Usage: locknload [-v] [-o logfile] [-m lockmode] [-d lockdir] -c "command"
+    -h
+        Display this help text and exit.
+    -V
+        Display version number and exit.
+    -v
+        Verbosity level. Can be used more than once to increase verbosity.
+        Default: 0
+    -o logfile
+        If defined all the execution output will be redirected to the logfile,
+        otherwise normal stdout and stderr will be used.
+        Default: None
+    -m lockmode
+        Lock acquisition mode. Available lockmodes are:
+            flock       : Uses flock command from util-linux package.
+        Lockmodes not yet implemented:
+            lockfile    : Uses lockfile command from procmail package.
+            hardlink    : Uses the technique described on open(2).
+            mkdir       : Uses a directory as a lock.
+        Default: flock
+    -d lockdir
+        Directory holding the locks. Should be an NFS directory shared among
+        the servers running concurrent commands.
+        Lockfiles found inside the lockdir are defined using some kind of
+        textual hash derived from the original command. Inside the lockfile
+        you will find the original command, the host which got the lock and
+        the start/finish/fail execution time.
+        Default: /tmp/locks
+    -c command
+        The command to be run itself. If you are trying to run something more
+        complex, perhaps multiple commands with "&&" or ";" or commands
+        with parameters, you should use quoting to encapsulate the command.
+        Default: None
+</code>
+</pre>
+
+h2. Author
+
+Rogério Carvalho Schneider <stockrt@gmail.com>
+
+"http://stockrt.github.com":http://stockrt.github.com
+
+h2. Contributors
+
+"People":https://github.com/stockrt/locknload/contributors
+
+h2. Changelog
+
+See "CHANGELOG.textile":https://github.com/stockrt/locknload/blob/master/CHANGELOG.textile
+
+h2. License
+
+See "LICENSE":https://github.com/stockrt/locknload/blob/master/LICENSE
+
+h2. locknload.wav
+
+Pronounced "lock and load" in honor of the great game Counter-Strike.
+
+Counter-Strike and locknload.wav are Valve Corporation copyright, all rights reserved.
+Counter-Strike is registered trademark of the Valve Corporation.
