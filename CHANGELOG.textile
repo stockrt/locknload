@@ -1,5 +1,15 @@
 h2. Locknload changelog
 
+h3. Version 0.1.0
+
+*  Adding documentation and license
+*  Tempdir now set to TMP environment variable. Defaults to /tmp.
+*  Lockdir uses default from TMP/locks and is not obrigatory anymore
+*  Better usage message
+*  Loglevel and comments changed
+*  Log success or failure to acquire the lock
+*  Display version number
+
 h3. Version 0.0.1
 
 * First public release
