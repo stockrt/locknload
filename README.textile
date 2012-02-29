@@ -21,7 +21,7 @@ locknload:
 <pre>
 <code>
     locknload -c "command"
-    locknload -d /nfs/locks -c "command"
+    locknload -d /nfs/lock -c "command"
 </code>
 </pre>
 
@@ -69,7 +69,7 @@ Usage: locknload [-v] [-o logfile] [-m lockmode] [-d lockdir] -c "command"
         textual hash derived from the original command. Inside the lockfile you
         will find the original command, the host which got the lock and the
         start/finish/fail execution time.
-        Default: /tmp/locks
+        Default: /tmp/lock
     -c command
         The command to be run itself. If you are trying to run something more
         complex, perhaps multiple commands with "&&" or ";" or commands with

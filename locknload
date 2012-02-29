@@ -56,7 +56,7 @@ tempdir="${TMP:-/tmp}"
 verbosity=0
 logfile="None"
 lockmode="flock"
-lockdir="$tempdir/locks"
+lockdir="$tempdir/lock"
 command="None"
 
 
