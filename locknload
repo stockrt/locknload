@@ -28,15 +28,16 @@
 #   - flock (util-linux)
 #   - lockfile (procmail)
 #   - rw access to the lockdir
+#   - logger
 
 
 #############
 ## CONFIGS ##
 #############
 
-# Exit on command errors
+# Exit on command errors.
 #set -e
-# Exit on variable expansion errors
+# Exit on variable expansion errors.
 set -u
 
 
@@ -44,19 +45,32 @@ set -u
 ## DEFINES ##
 #############
 
-# Version number
-version="0.1.0"
+# Version number.
+version="0.1.1"
 
-# Program name
+# Program name.
 program="$(basename "$0")"
 
-# Tempdir
+# Tempdir.
 tempdir="${TMP:-/tmp}"
 
+# Say no more.
 verbosity=0
+
+# Defaults logging to console.
+logging_strategy="console_only"
 logfile="None"
+logger_options="None"
+logger_pri="None"
+logger_tag="None"
+# If logging to file or logger you can also, optionally, log to console too.
+output_log_to_console="false"
+
+# Lock.
 lockmode="flock"
 lockdir="$tempdir/lock"
+
+# Do this.
 command="None"
 
 
@@ -66,7 +80,7 @@ command="None"
 
 usage () {
     echo "
-Usage: locknload [-v] [-o logfile] [-m lockmode] [-d lockdir] -c \"command\"
+Usage: locknload [-v] [-o logfile] [-l pri:tag] [-t] [-m lockmode] [-d lockdir] -c \"command\"
     -h
         Display this help text and exit.
     -V
@@ -75,9 +89,16 @@ Usage: locknload [-v] [-o logfile] [-m lockmode] [-d lockdir] -c \"command\"
         Verbosity level. Can be used more than once to increase verbosity.
         Default: $verbosity
     -o logfile
-        If defined all the execution output will be redirected to the logfile,
-        otherwise normal stdout and stderr will be used.
+        If defined all the execution output will be redirected to the logfile.
         Default: $logfile
+    -l pri:tag
+        If defined will forward log messages to syslog through logger using
+        priority 'pri' (facility.level) and 'tag', both separated from each
+        other by a ':' signal. Example: -l user.info:myapp
+        Default: $logger_options
+    -t
+        Output logs to console even if logging to file and/or logger.
+        Default: $output_log_to_console
     -m lockmode
         Lock acquisition mode. Available lockmodes are:
             flock       : Uses flock command from util-linux package.
@@ -101,6 +122,7 @@ Usage: locknload [-v] [-o logfile] [-m lockmode] [-d lockdir] -c \"command\"
         Default: $command"
 }
 
+# Log arbitrary messages if verbosity requirements are met.
 log () {
     verbositylevel=$1
     shift
@@ -108,34 +130,33 @@ log () {
 
     if [[ $verbosity -ge $verbositylevel ]]
     then
-        if [[ "$logfile" == "None" ]]
-        then
-            echo "$logmessage"
-        else
-            # Syslog format
-            #echo "$(date +"%b %d %H:%M:%S") $HOSTNAME $program[$$]: ($command): $logmessage"
-            # Slack and yet more useful format
-            echo "$(date) $HOSTNAME $program[$$]: ($command): $logmessage"
-        fi
+        echo "$logmessage"
     fi
 }
 
 splash () {
-    if [[ "$logfile" == "None" && $verbosity -ge 2 ]]
+    if [[ "$logging_strategy" == "console_only" && $verbosity -ge 2 ]]
     then
+        # When using console_only separate splash screen with empty lines.
         echo
     fi
-    log 2 "Program      : $program"
-    log 2 "Command      : $command"
-    log 2 "Verbosity    : $verbosity"
-    log 2 "Logfile      : $logfile"
-    log 2 "Lockmode     : $lockmode"
-    log 2 "Lockdir      : $lockdir"
-    log 2 "Lockfile     : $lockfile"
-    log 2 "Tempdir      : $tempdir"
-    log 2 "Tempfile     : $tempfile"
-    if [[ "$logfile" == "None" && $verbosity -ge 2 ]]
+    log 2 "Program          : $program"
+    log 2 "Command          : $command"
+    log 2 "Verbosity        : $verbosity"
+    log 2 "Logging strategy : $logging_strategy"
+    log 2 "Logfile          : $logfile"
+    log 2 "Logger options   : $logger_options"
+    log 2 "Logger pri       : $logger_pri"
+    log 2 "Logger tag       : $logger_tag"
+    log 2 "Console log      : $output_log_to_console"
+    log 2 "Lockmode         : $lockmode"
+    log 2 "Lockdir          : $lockdir"
+    log 2 "Lockfile         : $lockfile"
+    log 2 "Tempdir          : $tempdir"
+    log 2 "Tempfile         : $tempfile"
+    if [[ "$logging_strategy" == "console_only" && $verbosity -ge 2 ]]
     then
+        # When using console_only separate splash screen with empty lines.
         echo
     fi
 }
@@ -145,7 +166,7 @@ splash () {
 ## ARGS ##
 ##########
 
-while getopts hVvo:m:d:c: arg
+while getopts hVvo:l:tm:d:c: arg
 do
     case $arg in
         h)
@@ -161,6 +182,14 @@ do
             ;;
         o)
             logfile="$OPTARG"
+            ;;
+        l)
+            logger_options="$OPTARG"
+            logger_pri="${logger_options%:*}" # cut from right until the first occurrence of pattern.
+            logger_tag="${logger_options#*:}" # cut from left until the first occurrence of pattern.
+            ;;
+        t)
+            output_log_to_console="true"
             ;;
         m)
             lockmode="$OPTARG"
@@ -179,7 +208,7 @@ do
 done
 shift $(($OPTIND - 1))
 
-# Obrigatory argument check
+# Obligatory argument check.
 if [[ "$command" == "None" ]]
 then
     echo "Command must be specified with -c \"command\"."
@@ -187,12 +216,49 @@ then
     exit 1
 fi
 
-# Invalid options check
+# Invalid lockmode options check.
 if [[ "$lockmode" != "flock" ]]
 then
-    echo "Invalid lockmode: $lockmode"
+    echo "Invalid lockmode: -m $lockmode"
     usage
     exit 1
+fi
+
+# Invalid logger options check.
+if [[ "$logger_options" != "None" ]]
+then
+    err_flag="false"
+
+    # Matches format pri:tag (facility.level:tag) (user.info:myapp as well as user.info:myapp-be).
+    if [[ ! "$logger_options" =~ ^[[:alnum:]]+\.[[:alnum:]]+:([[:alnum:]]|[[:punct:]])+$ ]]
+    then
+        err_flag="true"
+    fi
+
+    # Has no more than one ':' symbol.
+    x="${logger_options//[^:]/}"
+    count=${#x}
+    if [[ $count -gt 1 ]]
+    then
+        err_flag="true"
+    fi
+
+    # Has no more than one '.' symbol for looger_pri.
+    x="${logger_pri//[^\.]/}"
+    count=${#x}
+    if [[ $count -ne 1 ]]
+    then
+        err_flag="true"
+    fi
+
+    if [[ "$err_flag" == "true" ]]
+    then
+        echo "Invalid logger_options: -l $logger_options"
+        echo "Found logger_pri: $logger_pri"
+        echo "Found logger_tag: $logger_tag"
+        usage
+        exit 1
+    fi
 fi
 
 
@@ -200,8 +266,23 @@ fi
 ## MAIN ##
 ##########
 
-# Logfile
-if [[ "$logfile" != "None" ]]
+# Logging strategy.
+if [[ "$logfile" == "None" && "$logger_options" == "None" ]]
+then
+    logging_strategy="console_only"
+elif [[ "$logfile" != "None" && "$logger_options" == "None" ]]
+then
+    logging_strategy="logfile_only"
+elif [[ "$logfile" == "None" && "$logger_options" != "None" ]]
+then
+    logging_strategy="logger_only"
+elif [[ "$logfile" != "None" && "$logger_options" != "None" ]]
+then
+    logging_strategy="logfile_and_logger"
+fi
+
+# Pre logfile. Logdir discovery.
+if [[ "$logging_strategy" =~ ^logfile_.* ]]
 then
     log 4 "Calculating logdir for logfile: $logfile"
     curdir="$PWD"
@@ -210,19 +291,106 @@ then
     log 4 "Calculated logdir for logfile: $logfile"
     cd "$curdir"
     log 4 "Redirecting output (stdout and stderr) to logfile: $logfile"
-    exec >> "$logfile" 2>&1
 fi
 
-if [[ "$logfile" != "None" ]]
+# Syslog format.
+#echo "$(date +"%b %d %H:%M:%S") $HOSTNAME $program[$$]: ($command): $logmessage"
+# Slacker and yet more useful format.
+#echo "$(date) $HOSTNAME $program[$$]: ($command): $logmessage"
+
+# Log formatting and redirection.
+if [[ "$logging_strategy" == "console_only" ]]
 then
-    log 0 "############################################################"
+    # Console only.
+    # Do nothing.
+    :
+elif [[ "$logging_strategy" == "logfile_only" ]]
+then
+    # Logfile only.
+    if [[ "$output_log_to_console" == "true" ]]
+    then
+        # Also, send logs to console.
+        exec > >(\
+            while read line
+            do
+                echo "$(date) $HOSTNAME $program[$$]: ($command): $line"
+            done | tee -a "$logfile"
+        ) 2>&1
+    else
+        # No console, thanks.
+        exec > >(\
+            while read line
+            do
+                echo "$(date) $HOSTNAME $program[$$]: ($command): $line"
+            done >> $logfile
+        ) 2>&1
+    fi
+elif [[ "$logging_strategy" == "logger_only" ]]
+then
+    # Logger only.
+    if [[ "$output_log_to_console" == "true" ]]
+    then
+        # Also, send logs to console.
+        exec > >(\
+            while read line
+            do
+                echo "$program[$$]: ($command): $line"
+            done | logger -p "$logger_pri" -t "$logger_tag" -s 2>&1
+        ) 2>&1
+    else
+        # No console, thanks.
+        exec > >(\
+            while read line
+            do
+                echo "$program[$$]: ($command): $line"
+            done | logger -p "$logger_pri" -t "$logger_tag"
+        ) 2>&1
+    fi
+elif [[ "$logging_strategy" == "logfile_and_logger" ]]
+then
+    # Both logfile and logger.
+    if [[ "$output_log_to_console" == "true" ]]
+    then
+        # Also, send logs to console.
+        exec > >(\
+            tee -a >(\
+                while read line
+                do
+                    echo "$program[$$]: ($command): $line"
+                done | logger -p "$logger_pri" -t "$logger_tag"
+            ) |\
+                while read line
+                do
+                    echo "$(date) $HOSTNAME $program[$$]: ($command): $line"
+                done | tee -a "$logfile"
+        ) 2>&1
+    else
+        # No console, thanks.
+        exec > >(\
+            tee -a >(\
+                while read line
+                do
+                    echo "$program[$$]: ($command): $line"
+                done | logger -p "$logger_pri" -t "$logger_tag"
+            ) |\
+                while read line
+                do
+                    echo "$(date) $HOSTNAME $program[$$]: ($command): $line"
+                done >> "$logfile"
+        ) 2>&1
+    fi
+fi
+
+# Start log.
+if [[ "$logging_strategy" =~ ^(logfile_.*|logger_.*) ]]
+then
+    # When using logfile or logger or both it is nice to have boundaries of application started/finished logged.
     log 0 "Started execution"
 else
-    log 1 "############################################################"
     log 1 "Started execution"
 fi
 
-# Lockdir
+# Lockdir.
 log 2 "Creating lockdir: $lockdir"
 if [[ ! -d "$lockdir" ]]
 then
@@ -232,23 +400,23 @@ else
     log 3 "Lockdir already exists: $lockdir"
 fi
 
-# Tempfile creation
+# Tempfile creation.
 log 2 "Creating tempfile"
 tempfile="$(mktemp $tempdir/tmp.XXXXXXXXXXXXXXXXXXXX)"
 log 3 "Created tempfile: $tempfile"
 
-# Tempfile permissions
+# Tempfile permissions.
 log 2 "Changing permissions of tempfile: $tempfile"
 chmod 755 "$tempfile"
 log 3 "Changed permissions of tempfile: $tempfile"
 
-# Lock
-lockname="$(sed 's/[^[:alnum:]]/_/g' <<< "$command" | tr -s _)"
-lockname="${lockname#_}"
-lockname="${lockname%_}"
+# Lock.
+lockname="$(sed 's/[^[:alnum:]]/_/g' <<< "$command" | tr -s _)" # change all non alphanumeric characters by '_' and squeeze repeated ones.
+lockname="${lockname#_}" # remove first '_' if found.
+lockname="${lockname%_}" # remove last '_' if found.
 lockfile="$lockdir/$lockname.lock"
 
-# Lock data
+# Lock data.
 lockdata="$command
 \$HOSTNAME
 start:  \$(date)"
@@ -257,21 +425,21 @@ start:  \$(date)"
 ## Temporary script ##
 ######################
 log 2 "Creating command script using tempfile: $tempfile"
-echo "#!/usr/bin/env bash
+echo "#!/bin/bash
 
-# Exit on command errors
+# Exit on command errors.
 #set -e
-# Exit on variable expansion errors
+# Exit on variable expansion errors.
 set -u
 
-# Information into lockfile
+# Information into lockfile.
 echo \"$lockdata\" > \"$lockfile\"
 
-# Running the command itself
+# Running the command itself.
 $command
 ret=\$?
 
-# More information into lockfile
+# More information into lockfile.
 if [[ \$ret -eq 0 ]]
 then
     echo \"finish: \$(date)\" >> \"$lockfile\"
@@ -279,51 +447,48 @@ else
     echo \"fail:   \$(date)\" >> \"$lockfile\"
 fi
 
-# And yet more information into lockfile
+# And yet more information into lockfile.
 echo \"return code: \$ret\" >> \"$lockfile\"
 
-# Signaling that we succeded acquiring the lock
+# Signaling that we succeded acquiring the lock.
 > \${0}.ok
 
-# Propagating the return code from the command
+# Propagating the return code from the command.
 exit \$ret" > "$tempfile"
 log 3 "Created command script using tempfile: $tempfile"
 ######################
 ## Temporary script ##
 ######################
 
-# Splash screen
+# Splash screen.
 splash
 
 ###################
 ## Lock and Load ##
 ###################
-if [[ "$logfile" != "None" ]]
-then
-    log 2 "Starting execution of locked command"
-    log 2 "Acquiring lock on lockfile: $lockfile"
-else
-    log 2 "Starting execution of locked command: $command"
-    log 2 "Acquiring lock on lockfile: $lockfile"
-fi
+log 2 "Starting execution of locked command: $command"
+log 2 "Acquiring lock on lockfile: $lockfile"
 
-# Lock
+# Lock.
 flock -n "$lockfile" "$tempfile"
 ret=$?
 
+# Return.
 if [[ -f "${tempfile}.ok" ]]
 then
-    if [[ "$logfile" != "None" ]]
+    if [[ "$logging_strategy" =~ ^(logfile_.*|logger_.*) ]]
     then
+        # When using logfile or logger or both it is nice to have lock handling logged.
         log 0 "Acquired lock on lockfile: $lockfile"
     else
         log 1 "Acquired lock on lockfile: $lockfile"
     fi
 else
-    if [[ "$logfile" != "None" ]]
+    if [[ "$logging_strategy" =~ ^(logfile_.*|logger_.*) ]]
     then
+        # When using logfile or logger or both it is nice to have lock handling logged.
         log 0 "Could not acquire lock on lockfile: $lockfile"
-        log 3 "Finished execution of locked command"
+        log 3 "Finished execution of locked command: $command"
     else
         log 1 "Could not acquire lock on lockfile: $lockfile"
         log 3 "Finished execution of locked command: $command"
@@ -333,19 +498,19 @@ fi
 ## Lock and Load ##
 ###################
 
-# Tempfile cleanup
+# Tempfile cleanup.
 log 2 "Cleaning tempfile: $tempfile"
 rm -f "$tempfile" "${tempfile}.ok"
 log 3 "Cleaned tempfile: $tempfile"
 
-if [[ "$logfile" != "None" ]]
+# Last log.
+if [[ "$logging_strategy" =~ ^(logfile_.*|logger_.*) ]]
 then
+    # When using logfile or logger or both it is nice to have boundaries of application started/finished logged.
     log 0 "Finished execution. Return code: $ret"
-    log 0 "############################################################"
 else
     log 1 "Finished execution. Return code: $ret"
-    log 1 "############################################################"
 fi
 
-# Return code from command
+# Return code from command.
 exit $ret
